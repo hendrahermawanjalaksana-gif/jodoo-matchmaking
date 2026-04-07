@@ -1,8 +1,9 @@
 
 
 import { db } from "./firebase";
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, getDoc, query, where, orderBy, limit, runTransaction, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, getDoc, query, where, orderBy, limit, runTransaction, serverTimestamp } from "firebase/firestore";
 import { questions } from "./data/questions";
+import { isChatMessageUnsafe } from "./utils/chatSafety";
 
 export const findMatch = async (userId, gender) => {
   try {
@@ -30,8 +31,7 @@ export const findMatch = async (userId, gender) => {
               questionIndex: 0,
               answers: {},
               createdAt: serverTimestamp(),
-              status: "active",
-              messages: []
+              status: "active"
             });
             
             return sessionRef.id;
@@ -90,15 +90,12 @@ export const submitAnswer = async (sessionId, userId, questionIndex, answer) => 
 
 export const sendMessage = async (sessionId, userId, text) => {
   if (!text.trim()) return;
-  const sessionRef = doc(db, "sessions", sessionId);
-  
-  await updateDoc(sessionRef, {
-    messages: arrayUnion({ 
-      id: Math.random().toString(36).substring(7),
-      userId, 
-      text, 
-      timestamp: Date.now() // Keep numeric for client sorting if needed, or use serverTimestamp
-    })
+  if (isChatMessageUnsafe(text)) return;
+  const messagesRef = collection(db, "sessions", sessionId, "messages");
+  await addDoc(messagesRef, {
+    userId,
+    text: text.trim(),
+    createdAt: serverTimestamp()
   });
 };
 

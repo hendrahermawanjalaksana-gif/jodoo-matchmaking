@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { findMatch, submitAnswer, leaveQueue } from "./matchmaking";
 import { useSession } from "./hooks/useSession";
@@ -28,12 +28,13 @@ function MainApp() {
   const [showPartnerModal, setShowPartnerModal] = useState(false);
   const [partnerData, setPartnerData] = useState(null);
   const [toast, setToast] = useState({ visible: false, message: "", type: "info" });
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
-  
-  const showToast = (message, type = "info") => {
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds (countdown once chat window starts)
+  const chatDeadlineRef = useRef(null);
+
+  const showToast = useCallback((message, type = "info") => {
     setToast({ visible: true, message, type });
-    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 4000);
-  };
+    setTimeout(() => setToast((prev) => ({ ...prev, visible: false })), 4000);
+  }, []);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [isPartnerLoading, setIsPartnerLoading] = useState(false);
   const dropdownRef = useRef(null);
@@ -118,26 +119,34 @@ function MainApp() {
   const isCompleted = session?.status === "completed" || (session?.questionIndex >= questions.length);
 
   useEffect(() => {
-    let timer;
-    if (isCompleted && sessionId) {
-      timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setSessionId(null);
-            setShowChat(false);
-            setIsSearching(false);
-            showToast("Sesi telah berakhir. Mulailah perjalanan baru!", "info");
-            return 300;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      setTimeLeft(300);
+    chatDeadlineRef.current = null;
+    setTimeLeft(300);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !isCompleted) return;
+
+    if (showChat && chatDeadlineRef.current === null) {
+      chatDeadlineRef.current = Date.now() + 5 * 60 * 1000;
     }
-    return () => clearInterval(timer);
-  }, [isCompleted, sessionId]);
+    if (chatDeadlineRef.current === null) return;
+
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((chatDeadlineRef.current - Date.now()) / 1000));
+      setTimeLeft(left);
+      if (left <= 0) {
+        chatDeadlineRef.current = null;
+        setSessionId(null);
+        setShowChat(false);
+        setIsSearching(false);
+        showToast("Sesi chat 5 menit telah berakhir. Mulailah perjalanan baru!", "info");
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [sessionId, isCompleted, showChat, showToast]);
 
   useEffect(() => {
     if (isCompleted) {
@@ -259,7 +268,7 @@ function MainApp() {
                     <div style={{ textAlign: 'left' }}><h2 style={{ fontSize: '1.25rem', color: 'var(--primary)', fontWeight: 900, letterSpacing: '1px', margin: 0 }}>RESONANCE CHAT</h2><span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '2px' }}>Personal Alignment</span></div>
                     <button onClick={() => setShowChat(false)} style={{ background: '#f8fafc', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                   </div>
-                  <Chat sessionId={sessionId} userId={user.uid} session={session} onToast={showToast} timeLeft={timeLeft} />
+                  <Chat sessionId={sessionId} userId={user.uid} onToast={showToast} timeLeft={timeLeft} />
                 </motion.div>
               )}
             </motion.div>

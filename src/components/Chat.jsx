@@ -2,11 +2,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Smile } from "lucide-react";
 import { sendMessage } from "../matchmaking";
+import { useMessages } from "../hooks/useMessages";
+import { isChatMessageUnsafe } from "../utils/chatSafety";
 import Avatar from "./Avatar";
 
-const Chat = ({ sessionId, userId, session, onToast, timeLeft }) => {
+const Chat = ({ sessionId, userId, onToast, timeLeft }) => {
   const [text, setText] = useState("");
   const messagesEndRef = useRef(null);
+  const messages = useMessages(sessionId);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -14,23 +17,7 @@ const Chat = ({ sessionId, userId, session, onToast, timeLeft }) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [session?.messages]);
-
-  const filterMessage = (text) => {
-    const patterns = [
-      /\b(\+?62|0)8[1-9][0-9]{7,10}\b/, // Indonesian phone numbers
-      /\b\d{9,}\b/, // Any sequence of 9+ digits (likely phone or WA)
-      /wa\.me/i,
-      /api\.whatsapp/i,
-      /instagram\.com/i,
-      /tiktok\.com/i,
-      /facebook\.com/i,
-      /twitter\.com/i,
-      /t\.me/i, // Telegram
-      /@\w+/, // Social handles
-    ];
-    return patterns.some(p => p.test(text));
-  };
+  }, [messages]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -40,10 +27,13 @@ const Chat = ({ sessionId, userId, session, onToast, timeLeft }) => {
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || timeLeft <= 0) return;
 
-    if (filterMessage(text)) {
-      onToast("Demi keamanan, berbagi kontak pribadi (No HP/WA/Sosmed) tidak diperbolehkan.", "warning");
+    if (isChatMessageUnsafe(text)) {
+      onToast(
+        "Demi keamanan: nomor HP, email, tautan, dan kontak di luar aplikasi tidak diperbolehkan.",
+        "warning"
+      );
       return;
     }
 
@@ -70,8 +60,8 @@ const Chat = ({ sessionId, userId, session, onToast, timeLeft }) => {
         </div>
       </div>
       <div className="chat-messages">
-        {session?.messages?.length > 0 ? (
-          session.messages.map((m) => (
+        {messages.length > 0 ? (
+          messages.map((m) => (
             <div 
               key={m.id} 
               className={`message-bubble ${m.userId === userId ? 'own' : 'other'}`}
@@ -101,10 +91,11 @@ const Chat = ({ sessionId, userId, session, onToast, timeLeft }) => {
         <input 
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Tulis pesan keselarasan..."
+          placeholder={timeLeft <= 0 ? "Sesi chat telah berakhir" : "Tulis pesan keselarasan..."}
           className="chat-input"
+          disabled={timeLeft <= 0}
         />
-        <button type="submit" className="chat-send-btn">
+        <button type="submit" className="chat-send-btn" disabled={timeLeft <= 0}>
           <Send size={20} style={{ transform: 'translateX(2px)' }} />
         </button>
       </form>
